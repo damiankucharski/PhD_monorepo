@@ -1,2 +1,3 @@
-# PhD_monorepo
-The repository for all things PhD
+# Damian Kucharski's PhD Repository
+
+This is the repository that will host all my PhD work. 
