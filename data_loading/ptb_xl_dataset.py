@@ -1,5 +1,5 @@
 from data_loading.dataset import Dataset
-import tsfel
+from functools import cached_property
 
 import pandas as pd
 import numpy as np
@@ -8,110 +8,110 @@ import ast
 from pathlib import Path
 import os
 
+import wandb
+
+from typing import Union
+
 class PTB_XL_Dataset(Dataset):
 
-    def __init__(self, dataset_dict):
-        self.dataset_dict = dataset_dict
+    def __init__(self, features, metadata, name="PTB_XL_Dataset"):
+        super().__init__(name=name)
+        self.features = features
+        self.metadata = metadata
+        self.local_path = None
+        self.name = "ptb_xl_dataset"
 
     @staticmethod
-    def create(path_to_data, sampling_rate):
+    def create(path_to_data = Path("../../Data/ptb_xl_dataset_reformatted")):
 
-        print("loading")
+        print("Reading meta")
 
-        Y = pd.read_csv(path_to_data / 'ptbxl_database.csv', index_col='ecg_id')
-        Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
-        Y.patient_id = Y.patient_id.astype(int)
-        Y.nurse = Y.nurse.astype('Int64')
-        Y.site = Y.site.astype('Int64')
-        Y.validated_by = Y.validated_by.astype('Int64')
+        test_meta = X_test = pd.read_csv(path_to_data/ "test_meta.csv")
+        val_meta = X_test = pd.read_csv(path_to_data/ "valid_meta.csv")
+        train_meta = X_test = pd.read_csv(path_to_data/ "train_meta.csv")
 
-        # Load raw signal data
-        X = PTB_XL_Dataset._load_raw_data(Y, sampling_rate, path_to_data)
+        meta = pd.concat([test_meta, val_meta, train_meta]).sort_values('ecg_id')
+        meta.index = meta.ecg_id
+        meta.index.name = 'ecg_id'
 
-        # Load scp_statements.csv for diagnostic aggregation
-        agg_df = pd.read_csv(path_to_data / 'scp_statements.csv', index_col=0)
-        agg_df = agg_df[agg_df.diagnostic == 1]
+        print("Reading features")
 
-        def diagnostic_class(scp):
-            res = set()
-            for k in scp.keys():
-                if k in agg_df.index:
-                    res.add(agg_df.loc[k].diagnostic_class)
-            return list(res)
+        X_train = pd.read_csv(path_to_data/ "train_signal.csv")
+        X_val = pd.read_csv(path_to_data/ "valid_signal.csv")
+        X_test = pd.read_csv(path_to_data/ "test_signal.csv")
 
-        Y['scp_classes'] = Y.scp_codes.apply(diagnostic_class)
+        print("Concatenating features")
 
-        Z = pd.DataFrame(0, index=Y.index, columns=['NORM', 'MI', 'STTC', 'CD', 'HYP'], dtype='int')
-        for i in Z.index:
-            for k in Y.loc[i].scp_classes:
-                Z.loc[i, k] = 1
+        features  = pd.concat([X_train, X_val, X_test]).reset_index().sort_values(['ecg_id','index'])
+        features.index = features.index
 
-        print("Splitting")
+        print("Done")
 
-        # Split data into train and test
-        test_fold = 10
-        val_fold = 9
-        # Train
-        X_train = X[np.where(Y.strat_fold != test_fold)]
-        y_train = Z[(Y.strat_fold != test_fold)]
-        # Test
-        X_test = X[np.where(Y.strat_fold == test_fold)]
-        y_test = Z[Y.strat_fold == test_fold]
-        # Val
-        X_val = X[np.where(Y.strat_fold == val_fold)]
-        y_val = Z[Y.strat_fold == val_fold]
+        return PTB_XL_Dataset(features, meta)
 
-        # Extract features
-        cfg = tsfel.get_features_by_domain('temporal')
+    
+    def save_to_dir(self, path: Union[str, Path]):
 
-        print("Extracting univariate_tsfel")
+        self.local_path = Path(path)
 
-        # Train, Test, Val data for univariate_tsfel
-        X_train_uni = np.array([tsfel.time_series_features_extractor(cfg, x, fs=100).values for x in X_train])
-        X_test_uni = np.array([tsfel.time_series_features_extractor(cfg, x, fs=100).values for x in X_test])
-        X_val_uni = np.array([tsfel.time_series_features_extractor(cfg, x, fs=100).values for x in X_val])
+        self.features.to_csv(self.local_path / 'ptb_xl_features.csv')
+        self.metadata.to_csv(self.local_path / 'ptb_xl_meta.csv')
 
-        print("Extracting multivatiate")
 
-        # Train, Test, Val data for multivariate_tsfel
-        X_train_multi = np.array([tsfel.time_series_features_extractor(cfg, x.reshape(-1, 1), fs=100).values for x in X_train])
-        X_test_multi = np.array([tsfel.time_series_features_extractor(cfg, x.reshape(-1, 1), fs=100).values for x in X_test])
-        X_val_multi = np.array([tsfel.time_series_features_extractor(cfg, x.reshape(-1, 1), fs=100).values for x in X_val])
+    def save_wab(self, project_name='ecg', tags=['latest'], local_path=None, metadata={}):
 
-        dataset_dict = {
-            'original': {
-                'X_train': X_train,
-                'X_val': X_val,
-                'X_test': X_test,
-                'y_train': y_train,
-                'y_val': y_val,
-                'y_test': y_test
-            },
-            'univariate_tsfel': {
-                'X_train': X_train_uni,
-                'X_val': X_val_uni,
-                'X_test': X_test_uni,
-                'y_train': y_train,
-                'y_val': y_val,
-                'y_test': y_test
-            },
-            'multivariate_tsfel': {
-                'X_train': X_train_multi,
-                'X_val': X_val_multi,
-                'X_test': X_test_multi,
-                'y_train': y_train,
-                'y_val': y_val,
-                'y_test': y_test
-            }
-        }
-
-        return PTB_XL_Dataset(dataset_dict)
-
+        return super().save_wab(self, project_name=project_name, tags=tags, local_path=local_path, metadata=metadata)
+        
     @staticmethod
-    def _load_raw_data(df, sampling_rate, path):
-        if sampling_rate == 100:
-            data = [wfdb.rdsamp(path / f) for f in df.filename_lr]
-        else:
-            data = [wfdb.rdsamp(path / f) for f in df.filename_hr]
-        data = np.array([signal for signal, meta in data])
-        return data
+    def load_wab(project_name='ecg', tag='latest'):
+        
+        run = wandb.init(
+        project=project_name, 
+        job_type='download-dataset'
+        )
+
+        artifact = run.use_artifact(f'{project_name}/ptb_xl_dataset:{tag}')
+        download_path = Path(artifact.download())
+
+        features = pd.read_csv(download_path/'ptb_xl_features.csv', index_col=0)
+        meta = pd.read_csv(download_path/'ptb_xl_meta.csv', index_col=0)
+
+        run.finish()
+
+        return PTB_XL_Dataset(features, meta)
+    
+    @cached_property
+    def X_train(self):
+        return self.features[self.features.ecg_id.isin(self.metadata[self.metadata['strat_fold']<=8].index)]
+
+    @cached_property
+    def X_val(self):
+        return self.features[self.features.ecg_id.isin(self.metadata[self.metadata['strat_fold']==9].index)]
+    
+    @cached_property
+    def X_test(self):
+        return self.features[self.features.ecg_id.isin(self.metadata[self.metadata['strat_fold']==10].index)]
+    
+    @cached_property
+    def y_train(self):
+        return self.metadata.loc[self.metadata['strat_fold'] <= 8, ['NORM','MI','STTC','HYP','CD']]
+    
+    @cached_property
+    def y_val(self):
+        return self.metadata.loc[self.metadata['strat_fold'] == 9, ['NORM','MI','STTC','HYP','CD']]
+    
+    @cached_property
+    def y_test(self):
+        return self.metadata.loc[self.metadata['strat_fold'] == 10, ['NORM','MI','STTC','HYP','CD']]
+    
+    @cached_property
+    def X_train_reshaped(self):
+        return self.X_train.values.reshape(-1, 1000, self.X_train.shape[-1])[..., -12:]
+
+    @cached_property
+    def X_val_reshaped(self):
+        return self.X_val.values.reshape(-1, 1000, self.X_val.shape[-1])[..., -12:]
+
+    @cached_property
+    def X_test_reshaped(self):
+        return self.X_test.values.reshape(-1, 1000, self.X_test.shape[-1])[..., -12:]
