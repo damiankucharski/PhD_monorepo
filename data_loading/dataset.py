@@ -4,6 +4,8 @@ import wandb
 from typing import Union
 from pathlib import Path
 
+
+
 class Dataset(ABC):
 
     def __init__(self, name = ""):
@@ -12,7 +14,7 @@ class Dataset(ABC):
 
     @staticmethod
     @abstractmethod
-    def create():
+    def create(path, name):
         pass
 
     @abstractmethod
@@ -20,7 +22,7 @@ class Dataset(ABC):
         pass
 
     @abstractmethod
-    def save_wab(self, project_name, tags=['latest'], local_path=None, metadata={}):
+    def save_wab(self, project_name, tags=['latest'], local_path=None, metadata={}, depends_on: wandb.Artifact = None):
         if (local_path is None) and (self.local_path is None):
             raise Exception("Use save_to_dir() first or provide local_path argument")
 
@@ -40,6 +42,12 @@ class Dataset(ABC):
 
         self.output_artifact.add_dir(str(self.local_path))
 
+        if depends_on is not None:
+            if not isinstance(depends_on, wandb.Artifact):
+                raise ValueError("depends_on object has to be wandb artifact")
+            else:
+                self.output_artifact.add_reference(depends_on)
+
         self.wab_save_run.log_artifact(self.output_artifact, aliases=tags)
 
         self.wab_save_run.finish()
@@ -48,7 +56,7 @@ class Dataset(ABC):
     
     @staticmethod
     @abstractmethod
-    def load_wab(project_name, tag='latest'):
+    def load_wab(project_name, dataset_name, tag='latest'):
         pass
 
     @abstractmethod
@@ -82,3 +90,8 @@ class Dataset(ABC):
     @cached_property 
     def y_test(self):
         pass
+
+
+    @abstractmethod
+    def get_artifact_name(self, project_name, version="latest"):
+        return f'{project_name}/{self.name}:{version}'

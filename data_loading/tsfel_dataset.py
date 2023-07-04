@@ -5,18 +5,19 @@ from typing import Union
 
 import pandas as pd
 from common.json import Json
+import wandb
+
+from data_loading.dataset_data import DatasetData
 
 class TsfelDataset(Dataset):
 
     def __init__(self, X_train, X_val, X_test, y_train, y_val, y_test, tsfel_config, extractor_config, name = "Tsfel_dataset"):
+        super(TsfelDataset, self).__init__()
         self.name = name
         self.local_path = None
-        self.X_train = X_train
-        self.X_val = X_val
-        self.X_test = X_test
-        self.y_train = y_train
-        self.y_val = y_val
-        self.y_test = y_test   
+
+        self.dataset_data = DatasetData(X_train, X_val, X_test, y_train, y_val, y_test)
+
         self.tsfel_config = tsfel_config
         self.extractor_config = extractor_config
 
@@ -52,44 +53,39 @@ class TsfelDataset(Dataset):
         print("Saved")
 
     
-    def save_wab(self, project_name, tags=['latest'], local_path=None, metadata={}):
+    def save_wab(self, project_name, tags=['latest'], local_path=None, metadata={}, depends_on: wandb.Artifact = None):
 
         metadata.update({'tsfel_config':self.tsfel_config,'extractor_config':self.extractor_config})
 
         super().save_wab(project_name=project_name, tags=tags, local_path=local_path, metadata=metadata)
     
     @staticmethod
-    def load_wab(project_name, name = "Tsfel_dataset", tag='latest'):
-        pass
+    def load_wab(project_name, dataset_name = "tsfel_dataset", tag='latest'):
+        return Dataset.load_wab(project_name = project_name, dataset_name=dataset_name, tag=tag)
 
-    
-    cached_property 
+    def get_artifact_name(self, project_name, version="latest"):
+        return super().get_artifact_name(project_name, version)
+
+    @cached_property
     def X_train(self):
-        pass
+        return self.dataset_data.X_train
 
-
-    
-    cached_property 
+    @cached_property
     def X_val(self):
-        pass
+        return self.dataset_data.X_val
 
-
-    
-    cached_property 
+    @cached_property
     def X_test(self):
-        pass
+        return self.dataset_data.X_test
 
-    
-    cached_property 
+    @cached_property
     def y_train(self):
-        pass
+        return self.dataset_data.y_train
 
-    
-    cached_property 
+    @cached_property
     def y_val(self):
-        pass
+        return self.dataset_data.y_val
 
-    
-    cached_property 
+    @cached_property
     def y_test(self):
-        pass
+        return self.dataset_data.y_test

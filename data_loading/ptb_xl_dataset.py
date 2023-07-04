@@ -3,10 +3,7 @@ from functools import cached_property
 
 import pandas as pd
 import numpy as np
-import wfdb
-import ast
 from pathlib import Path
-import os
 
 import wandb
 
@@ -14,15 +11,15 @@ from typing import Union
 
 class PTB_XL_Dataset(Dataset):
 
-    def __init__(self, features, metadata, name="PTB_XL_Dataset"):
+    def __init__(self, features, metadata, name="ptb_xl_dataset"):
         super().__init__(name=name)
         self.features = features
         self.metadata = metadata
         self.local_path = None
-        self.name = "ptb_xl_dataset"
+        self.name = name
 
     @staticmethod
-    def create(path_to_data = Path("../../Data/ptb_xl_dataset_reformatted")):
+    def create(path_to_data = Path("../../Data/ptb_xl_dataset_reformatted"), name = "ptb_xl_dataset"):
 
         print("Reading meta")
 
@@ -47,7 +44,7 @@ class PTB_XL_Dataset(Dataset):
 
         print("Done")
 
-        return PTB_XL_Dataset(features, meta)
+        return PTB_XL_Dataset(features, meta, name)
 
     
     def save_to_dir(self, path: Union[str, Path]):
@@ -63,14 +60,14 @@ class PTB_XL_Dataset(Dataset):
         return super().save_wab(self, project_name=project_name, tags=tags, local_path=local_path, metadata=metadata)
         
     @staticmethod
-    def load_wab(project_name='ecg', tag='latest'):
+    def load_wab(project_name='ecg', dataset_name = 'ptb_xl_dataset', tag='latest'):
         
         run = wandb.init(
         project=project_name, 
         job_type='download-dataset'
         )
 
-        artifact = run.use_artifact(f'{project_name}/ptb_xl_dataset:{tag}')
+        artifact = run.use_artifact(f'{project_name}/{dataset_name}:{tag}')
         download_path = Path(artifact.download())
 
         features = pd.read_csv(download_path/'ptb_xl_features.csv', index_col=0)
@@ -115,3 +112,6 @@ class PTB_XL_Dataset(Dataset):
     @cached_property
     def X_test_reshaped(self):
         return self.X_test.values.reshape(-1, 1000, self.X_test.shape[-1])[..., -12:]
+    
+    def get_artifact_name(self, project_name, version="latest"):
+        return super().get_artifact_name(project_name, version)
